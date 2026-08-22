@@ -1,29 +1,50 @@
-# smc_util
-Apple System Management Control (SMC) utility
+# iMac Ubuntu TDM
 
-Forked from original smc_util repository, with a couple of other, slightly modified, SMC-related tools:
-* powermetrics.d from https://gist.github.com/beltex/acbbeef815a7be938abf
-* SmcDumpKey.c from https://www.contrib.andrew.cmu.edu/~somlo/OSXKVM/
+Turn an old iMac into an external display using Target Display Mode on Ubuntu.
 
-# How to use
+## Compatible models
 
-Chances are you're here because of my [blog post](https://floe.butterbrot.org/matrix/hacking/tdm/) or [SO question](https://stackoverflow.com/questions/43491594/reverse-engineering-the-target-display-mode-on-an-imac/), and want to use this to turn an old iMac running Linux into a display.
+This should only work on these two iMac models, as they are the only ones with both a supported SMC and Mini DisplayPort input:
 
-_Note_: This was tested on a mid-2010 27" iMac running Yosemite and Ubuntu 16.04. Any other model/OS combo might behave differently.
+| Model                     | Identifier       |
+| ------------------------- | ---------------- |
+| iMac (27-inch, Late 2009) | iMac10,1 / A1312 |
+| iMac (27-inch, Mid 2010)  | iMac11,3 / A1312 |
 
-_Note_: I don't have the iMac I used for this anymore, so I can't test anything, sorry. That being said, the steps to use this are (on Ubuntu and derivatives):
+I've only personally tested this on **iMac11,3** running **Ubuntu Server 24.04 LTS**. Other models/OS combos may behave differently.
 
+## What it does
+
+Pressing the physical power button toggles Target Display Mode. The iMac switches between its own desktop and acting as a display for another device connected via Mini DisplayPort/Thunderbolt.
+
+- **Short press**: toggles TDM on/off
+- **Long press**: normal hardware shutdown (as usual)
+
+## Usage
+
+```bash
+git clone https://github.com/alburazvan/iMacUbuntuTDM.git
+cd iMacUbuntuTDM
+
+sudo ./install.sh
 ```
-sudo apt-get install build-essential
 
-git clone https://github.com/floe/smc_util.git
-cd smc_util
+The installer will:
 
-gcc -O2 -o SmcDumpKey SmcDumpKey.c -Wall
-sudo rmmod applesmc # remove the SMC kernel driver to avoid conflicts
+1. Install dependencies (`build-essential`, `evtest`)
+2. Compile `SmcDumpKey`
+3. Configure systemd-logind to ignore the power button
+4. Helps identify the power-button event to use
+5. Create a systemd service that listens for power-button presses
 
-sudo ./tdm_on.sh # enable target display mode
-sudo ./tdm_off.sh # disable target display mode
+## Uninstall
+
+```bash
+sudo ./uninstall.sh
 ```
 
-__IMPORTANT__: when you run `tdm_on.sh` and it works on your iMac, then the display will switch over to the DP input and you won't have the console anymore. Make sure you have a remote shell open first, or maybe a keyboard hotkey set up, so you can also run `tdm_off.sh` again to switch back to the internal iMac graphics.
+## Credits
+
+- [smc_util](https://github.com/floe/smc_util) by floe
+- [SmcDumpKey.c](https://www.contrib.andrew.cmu.edu/~somlo/OSXKVM/) from SOMLO/OSXKVM
+- [powermetrics.d](https://gist.github.com/beltex/acbbeef815a7be938abf) by beltex
