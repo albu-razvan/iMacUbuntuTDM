@@ -216,18 +216,40 @@ main(int argc, char **argv)
 
   if (argc == 3) {
 	uint8_t val = atoi(argv[2]);
+	int retries, ok = 0;
 	printf("target value: %02x\n",val);
-	if (write_smc(APPLESMC_WRITE_CMD,(uint8_t*)argv[1],&val,1))
-		fprintf(stderr,"\nwrite_smc get_key_data error\n\n");
+	for (retries = 0; retries < 5; retries++) {
+		if (!write_smc(APPLESMC_WRITE_CMD,(uint8_t*)argv[1],&val,1)) {
+			ok = 1;
+			break;
+		}
+		fprintf(stderr,"retry %d/5...\n", retries + 1);
+		usleep(500000);
+	}
+	if (!ok) {
+		fprintf(stderr,"\n%.4s: write_smc failed after 5 attempts\n\n", argv[1]);
+		return -5;
+	}
   }
 
   if (argc == 4) {
     uint8_t val[2];
     val[0] = atoi(argv[2]);
     val[1] = atoi(argv[3]);
+    int retries, ok = 0;
     printf("target value: %02x%02x\n",val[0],val[1]);
-    if (write_smc(APPLESMC_WRITE_CMD,(uint8_t*)argv[1],val,2))
-      fprintf(stderr,"\nwrite_smc get_key_data error\n\n");
+    for (retries = 0; retries < 5; retries++) {
+        if (!write_smc(APPLESMC_WRITE_CMD,(uint8_t*)argv[1],val,2)) {
+            ok = 1;
+            break;
+        }
+        fprintf(stderr,"retry %d/5...\n", retries + 1);
+        usleep(500000);
+    }
+    if (!ok) {
+        fprintf(stderr,"\n%.4s: write_smc failed after 5 attempts\n\n", argv[1]);
+        return -5;
+    }
   }
 
   return 0;

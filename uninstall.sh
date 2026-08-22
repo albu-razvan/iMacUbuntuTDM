@@ -95,8 +95,9 @@ echo
 echo -e "${YELLOW}Note: The following packages were NOT removed (may be needed by other software):${NC}"
 echo "  - build-essential"
 echo "  - evtest"
+echo "  - libdrm-tests"
 echo
 echo -e "${YELLOW}To remove them manually:${NC}"
-echo "  sudo apt-get remove --purge build-essential evtest"
+echo "  sudo apt-get remove --purge build-essential evtest libdrm-tests"
 echo
 echo "============================================================"

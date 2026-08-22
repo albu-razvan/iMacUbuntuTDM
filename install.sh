@@ -63,7 +63,7 @@ fi
 echo -e "${YELLOW}Installing required packages...${NC}"
 
 apt-get update
-apt-get install -y build-essential evtest
+apt-get install -y build-essential evtest libdrm-tests
 
 # make TDM scripts executable
 
@@ -364,21 +364,25 @@ if [[ -f "\$STATE_FILE" ]]; then
     echo "Running tdm_off.sh..."
 
     cd "\$TDM_DIR"
-    ./tdm_off.sh
-
-    rm -f "\$STATE_FILE"
-
-    echo "TDM_ENABLED=false"
+    if ./tdm_off.sh; then
+        rm -f "\$STATE_FILE"
+        echo "TDM_ENABLED=false"
+    else
+        echo "tdm_off.sh failed, keeping state file"
+        exit 1
+    fi
 else
     echo "TDM_ENABLED=false"
     echo "Running tdm_on.sh..."
 
     cd "\$TDM_DIR"
-    ./tdm_on.sh
-
-    touch "\$STATE_FILE"
-
-    echo "TDM_ENABLED=true"
+    if ./tdm_on.sh; then
+        touch "\$STATE_FILE"
+        echo "TDM_ENABLED=true"
+    else
+        echo "tdm_on.sh failed, not creating state file"
+        exit 1
+    fi
 fi
 EOF
 
