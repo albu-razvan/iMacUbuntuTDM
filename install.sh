@@ -30,6 +30,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 ON_SCRIPT="$SCRIPT_DIR/tdm_on.sh"
 OFF_SCRIPT="$SCRIPT_DIR/tdm_off.sh"
+BLANK_SCRIPT="$SCRIPT_DIR/tdm_blank.sh"
+TOGGLE_SRC="$SCRIPT_DIR/tdm-toggle"
+INIT_SRC="$SCRIPT_DIR/tdm-init"
+INIT_SERVICE_SRC="$SCRIPT_DIR/tdm-init.service"
+POWER_SERVICE_SRC="$SCRIPT_DIR/tdm-power-button.service"
 SMC_DUMPKEY="$SCRIPT_DIR/SmcDumpKey.c"
 SMC_DUMPKEY_BIN="$SCRIPT_DIR/SmcDumpKey"
 
@@ -50,6 +55,31 @@ fi
 
 if [[ ! -f "$OFF_SCRIPT" ]]; then
     echo -e "${RED}ERROR: $OFF_SCRIPT does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$BLANK_SCRIPT" ]]; then
+    echo -e "${RED}ERROR: $BLANK_SCRIPT does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$TOGGLE_SRC" ]]; then
+    echo -e "${RED}ERROR: $TOGGLE_SRC does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$INIT_SRC" ]]; then
+    echo -e "${RED}ERROR: $INIT_SRC does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$INIT_SERVICE_SRC" ]]; then
+    echo -e "${RED}ERROR: $INIT_SERVICE_SRC does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$POWER_SERVICE_SRC" ]]; then
+    echo -e "${RED}ERROR: $POWER_SERVICE_SRC does not exist.${NC}"
     exit 1
 fi
 
@@ -75,6 +105,11 @@ fi
 if [[ ! -x "$OFF_SCRIPT" ]]; then
     echo -e "${YELLOW}Making tdm_off.sh executable...${NC}"
     chmod +x "$OFF_SCRIPT"
+fi
+
+if [[ ! -x "$BLANK_SCRIPT" ]]; then
+    echo -e "${YELLOW}Making tdm_blank.sh executable...${NC}"
+    chmod +x "$BLANK_SCRIPT"
 fi
 
 # compile SmcDumpKey
@@ -347,73 +382,83 @@ if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
     exit 0
 fi
 
-# create TDM toggle script
+# default state on boot
+
+DEFAULT_STATE=""
 
 echo
-echo -e "${YELLOW}Creating /usr/local/sbin/tdm-toggle...${NC}"
-
-cat > /usr/local/sbin/tdm-toggle <<EOF
-#!/bin/bash
-set -euo pipefail
-
-STATE_FILE="/run/tdm_enabled"
-TDM_DIR="$SCRIPT_DIR"
-
-if [[ -f "\$STATE_FILE" ]]; then
-    echo "TDM_ENABLED=true"
-    echo "Running tdm_off.sh..."
-
-    cd "\$TDM_DIR"
-    if ./tdm_off.sh; then
-        rm -f "\$STATE_FILE"
-        echo "TDM_ENABLED=false"
-    else
-        echo "tdm_off.sh failed, keeping state file"
-        exit 1
+echo -e "${BOLD}Select default state on boot:${NC}"
+echo -e "  ${BLUE}[1] off${NC}  - blank screen (setterm --blank force)"
+echo -e "  ${BLUE}[2] tty${NC}  - local console/TTY (setterm --blank poke + 0)"
+echo -e "  ${BLUE}[3] tdm${NC}  - Target Display Mode"
+echo
+while true; do
+    read -rp "Choice [1-3] (default 2 - tty): " DEFAULT_CHOICE
+    # empty defaults to tty
+    if [[ -z "$DEFAULT_CHOICE" ]]; then
+        DEFAULT_CHOICE="2"
     fi
-else
-    echo "TDM_ENABLED=false"
-    echo "Running tdm_on.sh..."
+    case "$DEFAULT_CHOICE" in
+        1|off|OFF)
+            DEFAULT_STATE="off"
+            break
+            ;;
+        2|tty|TTY)
+            DEFAULT_STATE="tty"
+            break
+            ;;
+        3|tdm|TDM)
+            DEFAULT_STATE="tdm"
+            break
+            ;;
+        *)
+            echo -e "${RED}Invalid selection. Enter 1, 2, 3, off, tty, or tdm.${NC}"
+            ;;
+    esac
+done
 
-    cd "\$TDM_DIR"
-    if ./tdm_on.sh; then
-        touch "\$STATE_FILE"
-        echo "TDM_ENABLED=true"
-    else
-        echo "tdm_on.sh failed, not creating state file"
-        exit 1
-    fi
-fi
-EOF
+echo -e "${GREEN}Default boot state: $DEFAULT_STATE${NC}"
 
+mkdir -p /etc/tdm
+echo "$DEFAULT_STATE" > /etc/tdm/default_state
+chmod 644 /etc/tdm/default_state
+echo "$SCRIPT_DIR" > /etc/tdm/repo_dir
+chmod 644 /etc/tdm/repo_dir
+echo -e "${YELLOW}Saved default to /etc/tdm/default_state and repo to /etc/tdm/repo_dir${NC}"
+
+# install TDM toggle and init scripts
+
+echo
+echo -e "${YELLOW}Installing /usr/local/sbin/tdm-toggle...${NC}"
+cp "$TOGGLE_SRC" /usr/local/sbin/tdm-toggle
+sed -i.bak "s|__TDM_DIR__|$SCRIPT_DIR|g" /usr/local/sbin/tdm-toggle
+rm -f /usr/local/sbin/tdm-toggle.bak
 chmod 755 /usr/local/sbin/tdm-toggle
 
-# stop existing service
+echo -e "${YELLOW}Installing /usr/local/sbin/tdm-init...${NC}"
+cp "$INIT_SRC" /usr/local/sbin/tdm-init
+sed -i.bak "s|__TDM_DIR__|$SCRIPT_DIR|g" /usr/local/sbin/tdm-init
+rm -f /usr/local/sbin/tdm-init.bak
+chmod 755 /usr/local/sbin/tdm-init
+
+# stop existing services
 
 echo
-echo -e "${YELLOW}Stopping existing TDM power-button service...${NC}"
+echo -e "${YELLOW}Stopping existing TDM services...${NC}"
 
 systemctl stop tdm-power-button.service 2>/dev/null || true
+systemctl stop tdm-init.service 2>/dev/null || true
 
-# create systemd service
+# install systemd services
 
-echo -e "${YELLOW}Creating systemd service...${NC}"
+echo -e "${YELLOW}Installing systemd services...${NC}"
+cp "$INIT_SERVICE_SRC" /etc/systemd/system/tdm-init.service
+chmod 644 /etc/systemd/system/tdm-init.service
 
-cat > /etc/systemd/system/tdm-power-button.service <<EOF
-[Unit]
-Description=TDM power button handler
-After=systemd-logind.service
-Requires=systemd-logind.service
-
-[Service]
-Type=simple
-ExecStart=/bin/sh -c '/usr/bin/evtest $POWER_DEVICE | /usr/bin/grep --line-buffered "type 1 ([^)]*), code 116 (KEY_POWER), value 0" | while read -r line; do /usr/local/sbin/tdm-toggle; done'
-Restart=always
-RestartSec=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
+cp "$POWER_SERVICE_SRC" /etc/systemd/system/tdm-power-button.service
+sed -i.bak "s|__POWER_DEVICE__|$POWER_DEVICE|g" /etc/systemd/system/tdm-power-button.service
+rm -f /etc/systemd/system/tdm-power-button.service.bak
+chmod 644 /etc/systemd/system/tdm-power-button.service
 
 # reload systemd
 
@@ -422,15 +467,16 @@ echo -e "${YELLOW}Reloading systemd...${NC}"
 
 systemctl daemon-reload
 
-# reset TDM state
-
 rm -f /run/tdm_enabled
+echo "tty" > /run/tdm_state
+chmod 644 /run/tdm_state 2>/dev/null || true
 
-# enable the service
+# enable the services
 
 echo
-echo -e "${YELLOW}Enabling TDM power-button service...${NC}"
+echo -e "${YELLOW}Enabling TDM services...${NC}"
 
+systemctl enable tdm-init.service
 systemctl enable tdm-power-button.service
 systemctl start tdm-power-button.service
 
@@ -438,25 +484,37 @@ systemctl start tdm-power-button.service
 
 echo
 echo -e "${BOLD}${GREEN}============================================================${NC}"
-echo -e "${BOLD}${GREEN} TDM setup complete${NC}"
+echo -e "${BOLD}${GREEN} TDM setup complete (3-state)${NC}"
 echo -e "${BOLD}${GREEN}============================================================${NC}"
 echo
 echo "Input device:"
 echo "  $POWER_DEVICE"
 echo
+echo "Default on boot:"
+echo "  $DEFAULT_STATE  (/etc/tdm/default_state)"
+echo
 echo "Short press:"
-echo "  tdm-toggle"
+echo "  tdm-toggle (off -> tty -> tdm -> off ...)"
 echo
 echo "Long press:"
 echo "  normal hardware/kernel shutdown"
 echo
-echo "Service:"
-echo "  tdm-power-button.service"
+echo "Services:"
+echo "  tdm-init.service (oneshot, applies default on boot)"
+echo "  tdm-power-button.service (listens for KEY_POWER)"
 echo
 echo "Check status:"
 echo "  sudo systemctl status tdm-power-button.service"
+echo "  sudo systemctl status tdm-init.service"
+echo "  cat /run/tdm_state"
+echo "  cat /etc/tdm/default_state"
 echo
 echo "View logs:"
 echo "  sudo journalctl -u tdm-power-button.service"
+echo "  sudo journalctl -u tdm-init.service"
+echo
+echo "Change boot default later:"
+echo "  echo tty | sudo tee /etc/tdm/default_state"
+echo "  # or off, tdm"
 echo
 echo "============================================================"

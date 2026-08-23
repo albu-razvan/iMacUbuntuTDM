@@ -1,0 +1,13 @@
+[Unit]
+Description=TDM init - apply default boot state
+After=local-fs.target systemd-logind.service
+Requires=systemd-logind.service
+Before=tdm-power-button.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tdm-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

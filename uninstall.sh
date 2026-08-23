@@ -22,14 +22,16 @@ echo -e "${BOLD}${BLUE} TDM uninstaller${NC}"
 echo -e "${BOLD}${BLUE}============================================================${NC}"
 echo
 
-# disable systemd service
+# disable systemd services
 
-echo -e "${YELLOW}Stopping and disabling TDM power-button service...${NC}"
+echo -e "${YELLOW}Stopping and disabling TDM services...${NC}"
 
 systemctl stop tdm-power-button.service 2>/dev/null || true
 systemctl disable tdm-power-button.service 2>/dev/null || true
+systemctl stop tdm-init.service 2>/dev/null || true
+systemctl disable tdm-init.service 2>/dev/null || true
 
-# remove systemd service file
+# remove systemd service files
 
 SERVICE_FILE="/etc/systemd/system/tdm-power-button.service"
 if [[ -f "$SERVICE_FILE" ]]; then
@@ -37,12 +39,24 @@ if [[ -f "$SERVICE_FILE" ]]; then
     rm -f "$SERVICE_FILE"
 fi
 
-# remove tdm-toggle script
+INIT_SERVICE_FILE="/etc/systemd/system/tdm-init.service"
+if [[ -f "$INIT_SERVICE_FILE" ]]; then
+    echo -e "${YELLOW}Removing $INIT_SERVICE_FILE...${NC}"
+    rm -f "$INIT_SERVICE_FILE"
+fi
+
+# remove tdm scripts
 
 TOGGLE_SCRIPT="/usr/local/sbin/tdm-toggle"
 if [[ -f "$TOGGLE_SCRIPT" ]]; then
     echo -e "${YELLOW}Removing $TOGGLE_SCRIPT...${NC}"
     rm -f "$TOGGLE_SCRIPT"
+fi
+
+INIT_SCRIPT="/usr/local/sbin/tdm-init"
+if [[ -f "$INIT_SCRIPT" ]]; then
+    echo -e "${YELLOW}Removing $INIT_SCRIPT...${NC}"
+    rm -f "$INIT_SCRIPT"
 fi
 
 # remove systemd-logind configuration
@@ -69,9 +83,37 @@ if [[ -f "$SMC_DUMPKEY_BIN" ]]; then
     rm -f "$SMC_DUMPKEY_BIN"
 fi
 
-# remove TDM state file
+# remove boot default config
 
+DEFAULT_DIR="/etc/tdm"
+DEFAULT_FILE="/etc/tdm/default_state"
+REPO_FILE="/etc/tdm/repo_dir"
+if [[ -f "$DEFAULT_FILE" ]]; then
+    echo -e "${YELLOW}Removing $DEFAULT_FILE...${NC}"
+    rm -f "$DEFAULT_FILE"
+fi
+if [[ -f "$REPO_FILE" ]]; then
+    echo -e "${YELLOW}Removing $REPO_FILE...${NC}"
+    rm -f "$REPO_FILE"
+fi
+if [[ -d "$DEFAULT_DIR" ]] && [[ -z "$(ls -A "$DEFAULT_DIR" 2>/dev/null)" ]]; then
+    rmdir "$DEFAULT_DIR" 2>/dev/null || true
+fi
+
+# remove TDM state files (3-state and legacy 2-state)
+
+rm -f /run/tdm_state
 rm -f /run/tdm_enabled
+
+# ensure VT is unblanked after uninstall (leave display on)
+for tty in /dev/tty1 /dev/tty2 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6 /dev/console; do
+    if [[ -e "$tty" ]]; then
+        setterm --blank poke --term linux < "$tty" > /dev/null 2>&1 || setterm --blank poke < "$tty" > /dev/null 2>&1 || true
+    fi
+done
+setterm --blank poke --term linux 2>/dev/null || setterm --blank poke 2>/dev/null || true
+echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+setterm --blank 0 --term linux 2>/dev/null || setterm --blank 0 2>/dev/null || true
 
 # reload systemd
 
@@ -87,10 +129,15 @@ echo -e "${BOLD}${GREEN}========================================================
 echo
 echo "Removed:"
 echo "  - tdm-power-button.service"
+echo "  - tdm-init.service"
 echo "  - /usr/local/sbin/tdm-toggle"
+echo "  - /usr/local/sbin/tdm-init"
 echo "  - /etc/systemd/logind.conf.d/tdm-power.conf"
 echo "  - $SMC_DUMPKEY_BIN"
-echo "  - /run/tdm_enabled"
+echo "  - /etc/tdm/default_state"
+echo "  - /etc/tdm/repo_dir"
+echo "  - /run/tdm_state"
+echo "  - /run/tdm_enabled (legacy)"
 echo
 echo -e "${YELLOW}Note: The following packages were NOT removed (may be needed by other software):${NC}"
 echo "  - build-essential"

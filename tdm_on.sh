@@ -3,3 +3,5 @@
 sleep 1
 ./SmcDumpKey MVMR 2
 sleep 2
+
+./tdm_unblank.sh

@@ -1,0 +1,60 @@
+#!/bin/bash
+set -euo pipefail
+
+TDM_DIR="__TDM_DIR__"
+# fallback if placeholder not replaced - read repo path saved by installer
+if [[ "$TDM_DIR" == "__TDM_DIR__" || ! -d "$TDM_DIR" ]]; then
+    if [[ -f /etc/tdm/repo_dir ]]; then
+        TDM_DIR="$(cat /etc/tdm/repo_dir 2>/dev/null | tr -d '[:space:]')"
+    fi
+fi
+if [[ ! -d "$TDM_DIR" ]]; then
+    echo "tdm-init: TDM_DIR not found: $TDM_DIR" >&2
+    exit 1
+fi
+STATE_FILE="/run/tdm_state"
+DEFAULT_FILE="/etc/tdm/default_state"
+
+DEFAULT="tty"
+if [[ -f "$DEFAULT_FILE" ]]; then
+    DEFAULT="$(cat "$DEFAULT_FILE" 2>/dev/null | tr -d '[:space:]')"
+fi
+case "$DEFAULT" in
+    off|tty|tdm) ;;
+    *) DEFAULT="tty" ;;
+esac
+
+echo "tdm-init: default=$DEFAULT"
+
+case "$DEFAULT" in
+    off)
+        echo "tdm-init: initializing to off (blank)..."
+        cd "$TDM_DIR"
+        # ensure SMC off (tdm_off.sh ends with unblank, so re-blank after)
+        ./tdm_off.sh || true
+        ./tdm_blank.sh || true
+        echo "off" > "$STATE_FILE"
+        # re-assert blank after getty/vconsole-setup may have poked the VT
+        # run in background so tdm-init finishes quickly and does not block
+        # tdm-power-button.service (which has Before dependency, original service used local-fs ordering)
+        ( sleep 3; ./tdm_blank.sh || true; sleep 2; ./tdm_blank.sh || true ) &
+        ;;
+    tty)
+        echo "tdm-init: initializing to tty..."
+        cd "$TDM_DIR"
+        ./tdm_off.sh || true
+        echo "tty" > "$STATE_FILE"
+        ;;
+    tdm)
+        echo "tdm-init: initializing to tdm..."
+        cd "$TDM_DIR"
+        if ./tdm_on.sh; then
+            echo "tdm" > "$STATE_FILE"
+        else
+            echo "tdm-init: tdm_on.sh failed, falling back to tty"
+            ./tdm_off.sh || true
+            echo "tty" > "$STATE_FILE"
+        fi
+        ;;
+esac
+echo "tdm-init: state=$(cat $STATE_FILE)"

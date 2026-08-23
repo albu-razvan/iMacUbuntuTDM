@@ -12,3 +12,5 @@ sudo timeout 5 modetest -M radeon -r </dev/null
 
 # restore default console
 sudo setupcon --current-tty
+
+./tdm_unblank.sh
