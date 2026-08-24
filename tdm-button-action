@@ -1,0 +1,73 @@
+#!/bin/bash
+set -euo pipefail
+
+LOCK_FILE="/run/tdm_power_button.lock"
+PENDING_FILE="/run/tdm_power_button.pending"
+STATE_FILE="/run/tdm_state"
+DOUBLE_PRESS_MS="${TDM_DOUBLE_PRESS_MS:-700}"
+
+sleep_seconds() {
+    printf '%s.%03d' "$((DOUBLE_PRESS_MS / 1000))" "$((DOUBLE_PRESS_MS % 1000))"
+}
+
+run_pending_toggle() {
+    local expected_ts="$1"
+    exec 9>"$LOCK_FILE"
+    flock -x 9
+
+    if [[ ! -f "$PENDING_FILE" ]]; then
+        exit 0
+    fi
+
+    local pending_ts
+    pending_ts="$(cat "$PENDING_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$pending_ts" != "$expected_ts" ]]; then
+        exit 0
+    fi
+
+    rm -f "$PENDING_FILE"
+    flock -u 9
+    exec /usr/local/sbin/tdm-toggle
+}
+
+if [[ "${1:-}" == "--flush-pending" ]]; then
+    run_pending_toggle "${2:-}"
+fi
+
+read_state() {
+    local current=""
+
+    if [[ -f "$STATE_FILE" ]]; then
+        current="$(cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    fi
+
+    case "$current" in
+        off|tty|tdm) printf '%s\n' "$current" ;;
+        *) printf 'off\n' ;;
+    esac
+}
+
+exec 9>"$LOCK_FILE"
+flock -x 9
+
+now_ms="$(date +%s%3N)"
+
+if [[ -f "$PENDING_FILE" ]]; then
+    pending_ts="$(cat "$PENDING_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$pending_ts" =~ ^[0-9]+$ ]] && (( now_ms - pending_ts <= DOUBLE_PRESS_MS )); then
+        rm -f "$PENDING_FILE"
+        flock -u 9
+        if [[ "$(read_state)" == "off" ]]; then
+            exec /usr/local/sbin/tdm-toggle
+        fi
+        exec /usr/local/sbin/tdm-toggle off
+    fi
+fi
+
+printf '%s\n' "$now_ms" > "$PENDING_FILE"
+flock -u 9
+
+(
+    sleep "$(sleep_seconds)"
+    /usr/local/sbin/tdm-button-action --flush-pending "$now_ms"
+) >/dev/null 2>&1 &

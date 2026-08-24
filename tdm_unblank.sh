@@ -6,6 +6,12 @@ for fb_blank in /sys/class/graphics/fb*/blank; do
     fi
 done
 
+for bl_power in /sys/class/backlight/*/bl_power; do
+    if [[ -f "$bl_power" ]]; then
+        echo 0 > "$bl_power" 2>/dev/null || true
+    fi
+done
+
 for tty in /dev/tty1 /dev/tty2 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6 /dev/console; do
     if [[ -e "$tty" ]]; then
         setterm --blank poke --term linux < "$tty" > /dev/null 2>&1 || setterm --blank poke < "$tty" > /dev/null 2>&1 || true

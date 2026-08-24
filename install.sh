@@ -32,6 +32,7 @@ ON_SCRIPT="$SCRIPT_DIR/tdm_on.sh"
 OFF_SCRIPT="$SCRIPT_DIR/tdm_off.sh"
 BLANK_SCRIPT="$SCRIPT_DIR/tdm_blank.sh"
 TOGGLE_SRC="$SCRIPT_DIR/tdm-toggle"
+BUTTON_ACTION_SRC="$SCRIPT_DIR/tdm-button-action"
 INIT_SRC="$SCRIPT_DIR/tdm-init"
 INIT_SERVICE_SRC="$SCRIPT_DIR/tdm-init.service"
 POWER_SERVICE_SRC="$SCRIPT_DIR/tdm-power-button.service"
@@ -65,6 +66,11 @@ fi
 
 if [[ ! -f "$TOGGLE_SRC" ]]; then
     echo -e "${RED}ERROR: $TOGGLE_SRC does not exist.${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$BUTTON_ACTION_SRC" ]]; then
+    echo -e "${RED}ERROR: $BUTTON_ACTION_SRC does not exist.${NC}"
     exit 1
 fi
 
@@ -110,6 +116,11 @@ fi
 if [[ ! -x "$BLANK_SCRIPT" ]]; then
     echo -e "${YELLOW}Making tdm_blank.sh executable...${NC}"
     chmod +x "$BLANK_SCRIPT"
+fi
+
+if [[ ! -x "$BUTTON_ACTION_SRC" ]]; then
+    echo -e "${YELLOW}Making tdm-button-action executable...${NC}"
+    chmod +x "$BUTTON_ACTION_SRC"
 fi
 
 # compile SmcDumpKey
@@ -435,6 +446,10 @@ sed -i.bak "s|__TDM_DIR__|$SCRIPT_DIR|g" /usr/local/sbin/tdm-toggle
 rm -f /usr/local/sbin/tdm-toggle.bak
 chmod 755 /usr/local/sbin/tdm-toggle
 
+echo -e "${YELLOW}Installing /usr/local/sbin/tdm-button-action...${NC}"
+cp "$BUTTON_ACTION_SRC" /usr/local/sbin/tdm-button-action
+chmod 755 /usr/local/sbin/tdm-button-action
+
 echo -e "${YELLOW}Installing /usr/local/sbin/tdm-init...${NC}"
 cp "$INIT_SRC" /usr/local/sbin/tdm-init
 sed -i.bak "s|__TDM_DIR__|$SCRIPT_DIR|g" /usr/local/sbin/tdm-init
@@ -467,7 +482,6 @@ echo -e "${YELLOW}Reloading systemd...${NC}"
 
 systemctl daemon-reload
 
-rm -f /run/tdm_enabled
 echo "tty" > /run/tdm_state
 chmod 644 /run/tdm_state 2>/dev/null || true
 
@@ -484,7 +498,7 @@ systemctl start tdm-power-button.service
 
 echo
 echo -e "${BOLD}${GREEN}============================================================${NC}"
-echo -e "${BOLD}${GREEN} TDM setup complete (3-state)${NC}"
+echo -e "${BOLD}${GREEN} TDM setup complete${NC}"
 echo -e "${BOLD}${GREEN}============================================================${NC}"
 echo
 echo "Input device:"
@@ -494,7 +508,10 @@ echo "Default on boot:"
 echo "  $DEFAULT_STATE  (/etc/tdm/default_state)"
 echo
 echo "Short press:"
-echo "  tdm-toggle (off -> tty -> tdm -> off ...)"
+echo "  toggle tty <-> tdm"
+echo
+echo "Double short press:"
+echo "  turn the local screen off"
 echo
 echo "Long press:"
 echo "  normal hardware/kernel shutdown"

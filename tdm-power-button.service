@@ -1,11 +1,11 @@
 [Unit]
-Description=TDM power button handler (3-state: off -> tty -> tdm)
+Description=TDM power button handler (single press toggle, double press off)
 After=systemd-logind.service tdm-init.service
 Requires=systemd-logind.service
 
 [Service]
 Type=simple
-ExecStart=/bin/sh -c '/usr/bin/evtest __POWER_DEVICE__ | /usr/bin/grep --line-buffered "type 1 ([^)]*), code 116 (KEY_POWER), value 0" | while read -r line; do /usr/local/sbin/tdm-toggle; done'
+ExecStart=/bin/sh -c '/usr/bin/evtest __POWER_DEVICE__ | /usr/bin/grep --line-buffered "type 1 ([^)]*), code 116 (KEY_POWER), value 0" | while read -r line; do /usr/local/sbin/tdm-button-action; done'
 Restart=always
 RestartSec=1
 

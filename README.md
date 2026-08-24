@@ -15,9 +15,10 @@ I've only personally tested this on **iMac11,3** running **Ubuntu Server 24.04 L
 
 ## What it does
 
-Pressing the physical power button toggles Target Display Mode. The iMac switches between its own desktop and acting as a display for another device connected via Mini DisplayPort/Thunderbolt.
+Pressing the physical power button toggles Target Display Mode. The iMac switches between its own desktop and acting as a display for another device connected via Mini DisplayPort.
 
-- **Short press**: toggles TDM on/off
+- **Single short press**: toggles between local console and TDM
+- **Double short press**: turns the local screen off
 - **Long press**: normal hardware shutdown (as usual)
 
 ## Usage

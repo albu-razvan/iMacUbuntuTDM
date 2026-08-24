@@ -2,115 +2,151 @@
 set -euo pipefail
 
 STATE_FILE="/run/tdm_state"
-LEGACY_STATE_FILE="/run/tdm_enabled"
+LOCK_FILE="/run/tdm_action.lock"
 TDM_DIR="__TDM_DIR__"
+ACTION="${1:-toggle}"
+
 # fallback if placeholder not replaced (e.g., manual copy) - read repo path saved by installer
 if [[ "$TDM_DIR" == "__TDM_DIR__" || ! -d "$TDM_DIR" ]]; then
     if [[ -f /etc/tdm/repo_dir ]]; then
         TDM_DIR="$(cat /etc/tdm/repo_dir 2>/dev/null | tr -d '[:space:]')"
     fi
 fi
+
 if [[ ! -d "$TDM_DIR" ]]; then
     echo "tdm-toggle: TDM_DIR not found: $TDM_DIR" >&2
     exit 1
 fi
 
-# migrate legacy state file if present (2-state -> 3-state)
-if [[ -f "$LEGACY_STATE_FILE" && ! -f "$STATE_FILE" ]]; then
-    echo "tdm" > "$STATE_FILE"
-    rm -f "$LEGACY_STATE_FILE"
-fi
+read_state() {
+    local current=""
+    if [[ -f "$STATE_FILE" ]]; then
+        current="$(cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    fi
 
-CURRENT=""
-if [[ -f "$STATE_FILE" ]]; then
-    CURRENT="$(cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]')"
-fi
+    case "$current" in
+        off|tty|tdm) printf '%s\n' "$current" ;;
+        "") printf 'off\n' ;;
+        *) printf 'off\n' ;;
+    esac
+}
 
-# normalize legacy / invalid values
-case "$CURRENT" in
-    off|tty|tdm) ;;
-    "") CURRENT="off" ;;  # initial blank if no state yet (will be overridden by tdm-init)
-    *)  CURRENT="off" ;;
-esac
+show_message() {
+    local message="$1"
+    local hold_seconds="${2:-1}"
+    local tty=""
 
-NEXT=""
-case "$CURRENT" in
-    off) NEXT="tty" ;;
-    tty) NEXT="tdm" ;;
-    tdm) NEXT="off" ;;
-esac
+    if [[ -r /sys/class/tty/tty0/active ]]; then
+        tty="/dev/$(tr -d '[:space:]' < /sys/class/tty/tty0/active 2>/dev/null || true)"
+    fi
 
-echo "Current: $CURRENT -> Next: $NEXT"
+    if [[ -z "$tty" || ! -e "$tty" ]]; then
+        tty="/dev/console"
+    fi
 
-case "$NEXT" in
+    if [[ ! -e "$tty" ]]; then
+        return 0
+    fi
+
+    {
+        printf '\n\033[1;97;44m[TDM] %s\033[0m\n\n' "$message"
+    } > "$tty" 2>/dev/null || true
+
+    sleep "$hold_seconds"
+}
+
+set_state() {
+    printf '%s\n' "$1" > "$STATE_FILE"
+}
+
+wake_local_tty() {
+    cd "$TDM_DIR"
+    ./tdm_unblank.sh
+}
+
+switch_to_tty() {
+    cd "$TDM_DIR"
+    if ./tdm_off.sh; then
+        set_state "tty"
+        echo "State: tty"
+        show_message "TTY Visible" 1.2
+    else
+        echo "tdm_off.sh failed, keeping state tdm"
+        exit 1
+    fi
+}
+
+switch_to_tdm() {
+    # We can only render this on the local console before the panel is handed off.
+    show_message "TDM Active" 1.2
+
+    cd "$TDM_DIR"
+    if ./tdm_on.sh; then
+        set_state "tdm"
+        echo "State: tdm"
+    else
+        echo "tdm_on.sh failed, keeping state tty"
+        exit 1
+    fi
+}
+
+switch_to_off() {
+    local current="$1"
+    cd "$TDM_DIR"
+
+    if [[ "$current" == "tdm" ]]; then
+        if ! ./tdm_off.sh; then
+            echo "tdm_off.sh failed, keeping state $current"
+            exit 1
+        fi
+    fi
+
+    show_message "Turning OFF screen" 1.2
+
+    if ./tdm_blank.sh; then
+        set_state "off"
+        echo "State: off (blank)"
+    else
+        echo "tdm_blank.sh failed"
+        exit 1
+    fi
+}
+
+exec 8>"$LOCK_FILE"
+flock -x 8
+
+CURRENT="$(read_state)"
+
+case "$ACTION" in
+    toggle)
+        case "$CURRENT" in
+            off)
+                echo "Current: off -> Next: tty"
+                echo "Running TTY restore..."
+                wake_local_tty
+                set_state "tty"
+                echo "State: tty (unblanked)"
+                show_message "TTY Visible" 1.2
+                ;;
+            tty)
+                echo "Current: tty -> Next: tdm"
+                echo "Running tdm_on.sh..."
+                switch_to_tdm
+                ;;
+            tdm)
+                echo "Current: tdm -> Next: tty"
+                echo "Running tdm_off.sh..."
+                switch_to_tty
+                ;;
+        esac
+        ;;
     off)
-        # tdm -> off : turn off TDM then blank
-        echo "Running tdm_off.sh + tdm_blank.sh..."
-        cd "$TDM_DIR"
-        if ./tdm_off.sh; then
-            if ./tdm_blank.sh; then
-                echo "off" > "$STATE_FILE"
-                echo "State: off (blank)"
-            else
-                echo "tdm_blank.sh failed"
-                exit 1
-            fi
-        else
-            echo "tdm_off.sh failed, keeping state $CURRENT"
-            exit 1
-        fi
+        echo "Current: $CURRENT -> Next: off"
+        echo "Running screen off..."
+        switch_to_off "$CURRENT"
         ;;
-    tty)
-        # off -> tty : unblank (tdm_off.sh handles poke + blank 0 + fb unblank)
-        # if coming from off, SMC is already off, so just unblank quickly without full tdm_off
-        # but for simplicity and correctness, if CURRENT is tdm we need full tdm_off, if off we can light unblank
-        echo "Running TTY restore..."
-        cd "$TDM_DIR"
-        if [[ "$CURRENT" == "tdm" ]]; then
-            if ./tdm_off.sh; then
-                echo "tty" > "$STATE_FILE"
-                echo "State: tty"
-            else
-                echo "tdm_off.sh failed, keeping state $CURRENT"
-                exit 1
-            fi
-        else
-            # off -> tty : lightweight unblank (tdm_off does same but heavier; reuse blank poke)
-            # do minimal unblank to avoid 4s modetest delay when just waking from blank
-            for fb_blank in /sys/class/graphics/fb*/blank; do
-                if [[ -f "$fb_blank" ]]; then
-                    echo 0 > "$fb_blank" 2>/dev/null || true
-                fi
-            done
-            for tty in /dev/tty1 /dev/tty2 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6 /dev/console; do
-                if [[ -e "$tty" ]]; then
-                    setterm --blank poke --term linux < "$tty" > /dev/null 2>&1 || setterm --blank poke < "$tty" > /dev/null 2>&1 || true
-                    setterm --powersave off --term linux < "$tty" > /dev/null 2>&1 || setterm --powersave off < "$tty" > /dev/null 2>&1 || true
-                    setterm --blank 0 --term linux < "$tty" > /dev/null 2>&1 || setterm --blank 0 < "$tty" > /dev/null 2>&1 || true
-                fi
-            done
-            setterm --blank poke --term linux 2>/dev/null || setterm --blank poke 2>/dev/null || true
-            setterm --powersave off --term linux 2>/dev/null || setterm --powersave off 2>/dev/null || true
-            setterm --blank 0 --term linux 2>/dev/null || setterm --blank 0 2>/dev/null || true
-            for fb_blank in /sys/class/graphics/fb*/blank; do
-                if [[ -f "$fb_blank" ]]; then
-                    echo 0 > "$fb_blank" 2>/dev/null || true
-                fi
-            done
-            echo "tty" > "$STATE_FILE"
-            echo "State: tty (unblanked)"
-        fi
-        ;;
-    tdm)
-        # tty -> tdm : enable TDM
-        echo "Running tdm_on.sh..."
-        cd "$TDM_DIR"
-        if ./tdm_on.sh; then
-            echo "tdm" > "$STATE_FILE"
-            echo "State: tdm"
-        else
-            echo "tdm_on.sh failed, keeping state $CURRENT"
-            exit 1
-        fi
+    *)
+        echo "Usage: $0 [toggle|off]" >&2
+        exit 1
         ;;
 esac

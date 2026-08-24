@@ -6,6 +6,13 @@ for tty in /dev/tty1 /dev/tty2 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6 /dev/cons
     fi
 done
 
+# if the driver exposes backlight power control, ask it to power down too
+for bl_power in /sys/class/backlight/*/bl_power; do
+    if [[ -f "$bl_power" ]]; then
+        echo 4 > "$bl_power" 2>/dev/null || echo 1 > "$bl_power" 2>/dev/null || true
+    fi
+done
+
 # kernel framebuffer blank via sysfs (more reliable than VT blank alone on radeon DRM)
 for fb_blank in /sys/class/graphics/fb*/blank; do
     if [[ -f "$fb_blank" ]]; then

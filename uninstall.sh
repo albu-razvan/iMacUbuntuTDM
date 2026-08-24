@@ -53,6 +53,12 @@ if [[ -f "$TOGGLE_SCRIPT" ]]; then
     rm -f "$TOGGLE_SCRIPT"
 fi
 
+BUTTON_ACTION_SCRIPT="/usr/local/sbin/tdm-button-action"
+if [[ -f "$BUTTON_ACTION_SCRIPT" ]]; then
+    echo -e "${YELLOW}Removing $BUTTON_ACTION_SCRIPT...${NC}"
+    rm -f "$BUTTON_ACTION_SCRIPT"
+fi
+
 INIT_SCRIPT="/usr/local/sbin/tdm-init"
 if [[ -f "$INIT_SCRIPT" ]]; then
     echo -e "${YELLOW}Removing $INIT_SCRIPT...${NC}"
@@ -100,10 +106,9 @@ if [[ -d "$DEFAULT_DIR" ]] && [[ -z "$(ls -A "$DEFAULT_DIR" 2>/dev/null)" ]]; th
     rmdir "$DEFAULT_DIR" 2>/dev/null || true
 fi
 
-# remove TDM state files (3-state and legacy 2-state)
+# remove TDM state files
 
 rm -f /run/tdm_state
-rm -f /run/tdm_enabled
 
 # ensure VT is unblanked after uninstall (leave display on)
 for tty in /dev/tty1 /dev/tty2 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6 /dev/console; do
@@ -131,13 +136,13 @@ echo "Removed:"
 echo "  - tdm-power-button.service"
 echo "  - tdm-init.service"
 echo "  - /usr/local/sbin/tdm-toggle"
+echo "  - /usr/local/sbin/tdm-button-action"
 echo "  - /usr/local/sbin/tdm-init"
 echo "  - /etc/systemd/logind.conf.d/tdm-power.conf"
 echo "  - $SMC_DUMPKEY_BIN"
 echo "  - /etc/tdm/default_state"
 echo "  - /etc/tdm/repo_dir"
 echo "  - /run/tdm_state"
-echo "  - /run/tdm_enabled (legacy)"
 echo
 echo -e "${YELLOW}Note: The following packages were NOT removed (may be needed by other software):${NC}"
 echo "  - build-essential"
